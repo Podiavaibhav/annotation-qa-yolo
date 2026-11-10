@@ -34,35 +34,35 @@ graph TD
 4. **Training & Evaluation**: Executes a controlled 3-way experiment using identical hyperparameters and fresh weights, evaluating all models on the untouched validation set.
 
 ## Installation
-git clone https://github.com/podiavaibhav/annotation-qa-yolo.git
-cd annotation-qa-yolo
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+* git clone https://github.com/podiavaibhav/annotation-qa-yolo.git
+* cd annotation-qa-yolo
+* python3 -m venv venv
+* source venv/bin/activate
+* pip install -r requirements.txt
 
 ## Usage
 **Run the complete pipeline**
 python main.py run-all --data path/to/dataset/data.yaml
 **Or run modules individually**
-python main.py analyze --data path/to/dataset/data.yaml
-python main.py detect --data path/to/dataset/data.yaml
-python main.py clean --data path/to/dataset/data.yaml
-python main.py train --data path/to/dataset/data.yaml
+* python main.py analyze --data path/to/dataset/data.yaml
+* python main.py detect --data path/to/dataset/data.yaml
+* python main.py clean --data path/to/dataset/data.yaml
+* python main.py train --data path/to/dataset/data.yaml
 
 ## Configuration
 **All thresholds are in configs/default.yaml:**
-*tiny_box_threshold: Minimum normalized area (default: 0.001)
-*duplicate_iou_threshold: IoU threshold for duplicate detection (default: 0.98)
-*cleaning_mode: conservative or aggressive
-*seed: Random seed for reproducible noise injection (default: 42)
+* tiny_box_threshold: Minimum normalized area (default: 0.001)
+* duplicate_iou_threshold: IoU threshold for duplicate detection (default: 0.98)
+* cleaning_mode: conservative or aggressive
+* seed: Random seed for reproducible noise injection (default: 42)
 
 ## Experiment Methodology
-*Original: Train on the clean dataset.
-*Noisy: Train on a synthetically corrupted copy (configurable probabilities for deletion, class flip, shift, resize, duplication).
-*Cleaned: Train on the dataset after the Cleaning Engine has processed the noisy version.
-All three models are evaluated on the exact same, untouched validation set.
+* Original: Train on the clean dataset.
+* Noisy: Train on a synthetically corrupted copy (configurable probabilities for deletion, class flip, shift, resize, duplication).
+* Cleaned: Train on the dataset after the Cleaning Engine has processed the noisy version.
+**All three models are evaluated on the exact same, untouched validation set.**
 
 ## Limitations
-*Model-assisted detection relies on the pretrained model's biases.
-*Aggressive cleaning may remove legitimate small objects.
-*Synthetic noise does not perfectly replicate human labeling errors.
+* Model-assisted detection relies on the pretrained model's biases.
+* Aggressive cleaning may remove legitimate small objects.
+* Synthetic noise does not perfectly replicate human labeling errors.
