@@ -1,0 +1,38 @@
+# Dataset paths
+dataset_path: null
+output_dir: outputs
+
+# YOLO model settings
+model_name: yolov8n.pt
+device: auto  # auto, cpu, cuda
+
+# Training settings
+epochs: 30
+img_size: 640
+batch_size: 16
+seed: 42
+optimizer: auto
+
+# Detection thresholds
+confidence_threshold: 0.50
+iou_threshold: 0.50
+
+# Analysis thresholds
+tiny_box_threshold: 0.001
+duplicate_iou_threshold: 0.98
+max_box_area: 0.95
+min_aspect_ratio: 0.1
+max_aspect_ratio: 10.0
+
+# Noise injection probabilities
+noise:
+  delete_probability: 0.05
+  class_flip_probability: 0.03
+  coordinate_shift_probability: 0.10
+  resize_probability: 0.20
+  duplicate_probability: 0.02
+  shift_amount: 0.1
+  resize_amount: 0.2
+
+# Cleaning mode
+cleaning_mode: conservative  # conservative or aggressive
