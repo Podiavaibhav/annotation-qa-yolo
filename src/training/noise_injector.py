@@ -136,7 +136,7 @@ class NoiseInjector:
         t2 = t1 + n['class_flip_probability']
         t3 = t2 + n['coordinate_shift_probability']
         t4 = t3 + n['resize_probability']
-        rel_path = label_file.relative_to(self.output_dir).as_posix()
+        rel_path = label_file.resolve().relative_to(self.output_dir.resolve()).as_posix()
 
         def fmt(b):
             return f"{b['cls']} {b['x']:.6f} {b['y']:.6f} {b['w']:.6f} {b['h']:.6f}\n"
