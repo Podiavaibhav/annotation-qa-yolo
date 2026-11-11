@@ -98,7 +98,9 @@ class TestAnnotationAnalyzer:
         report = analyzer.analyze()
         
         suspicious_issues = [i['issue'] for i in report['suspicious_details']]
-        assert 'duplicate_box' in suspicious_issues
+        assert 'exact_duplicate' in suspicious_issues
+        dup = next(i for i in report['suspicious_details'] if i['issue'] == 'exact_duplicate')
+        assert dup['line'] == 3   # the later copy, so the cleaner can drop just that one
 
     def test_extreme_aspect_ratio_detection(self, analyzer_dataset, default_config):
         analyzer = AnnotationAnalyzer(str(analyzer_dataset), default_config)

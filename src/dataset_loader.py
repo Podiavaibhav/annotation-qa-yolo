@@ -11,6 +11,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _labels_for_images(images_path: Path) -> Path:
+    """Swap the last 'images' folder in a path for 'labels' (the rule Ultralytics uses)."""
+    parts = list(images_path.parts)
+    for i in range(len(parts) - 1, -1, -1):
+        if parts[i] == 'images':
+            parts[i] = 'labels'
+            return Path(*parts)
+    return images_path / '__no_labels_folder__'   # sentinel that never exists
+
+
 class YOLODatasetLoader:
     """
     Loads and validates YOLO-format object detection datasets.
@@ -70,39 +80,57 @@ class YOLODatasetLoader:
         
         return config
     
+    _SPLIT_ALIASES = {'train': ['train'], 'val': ['val', 'valid', 'validation'], 'test': ['test']}
+
+    def _dataset_root(self) -> Path:
+        """Folder the yaml's relative split paths are relative to."""
+        raw = self.config.get('path')
+        if raw:
+            p = Path(raw)
+            if p.is_absolute():
+                if p.exists():
+                    return p
+            elif (self.dataset_dir / p).exists():
+                return self.dataset_dir / p
+        return self.dataset_dir
+
     def get_split_paths(self, split: str = 'train') -> Tuple[Path, Path]:
         """
         Get paths to images and labels for a specific split.
-        
+
+        Handles the layouts Ultralytics datasets come in: images/<split>, <split>/images,
+        and whatever the yaml points at (labels are found by swapping 'images' for 'labels').
+        'val' also matches 'valid' and 'validation'.
+
         Args:
             split: Dataset split ('train', 'val', or 'test')
-            
+
         Returns:
             Tuple of (images_path, labels_path)
         """
-        # Try standard structure first
-        images_path = self.dataset_dir / 'images' / split
-        labels_path = self.dataset_dir / 'labels' / split
-        
-        if images_path.exists() and labels_path.exists():
-            return images_path, labels_path
-        
-        # Try YAML-specified paths
-        if split in self.config:
-            split_path = Path(self.config[split])
-            if not split_path.is_absolute():
-                split_path = self.dataset_dir / split_path
-            
-            images_path = split_path / 'images'
-            labels_path = split_path / 'labels'
-            
+        root = self._dataset_root()
+        names = self._SPLIT_ALIASES.get(split, [split])
+
+        candidates = []
+        for name in names:
+            candidates.append((root / 'images' / name, root / 'labels' / name))
+            candidates.append((root / name / 'images', root / name / 'labels'))
+        for name in names:
+            entry = self.config.get(name)
+            if isinstance(entry, str):
+                p = Path(entry)
+                p = p if p.is_absolute() else root / p
+                candidates.append((p, _labels_for_images(p)))   # yaml points at the images folder
+                candidates.append((p / 'images', p / 'labels'))  # yaml points at the split folder
+
+        for images_path, labels_path in candidates:
             if images_path.exists() and labels_path.exists():
                 return images_path, labels_path
-        
+
         raise FileNotFoundError(
             f"Could not find {split} split in {self.dataset_dir}"
         )
-    
+
     def get_image_label_pairs(self, split: str = 'train') -> List[Tuple[Path, Path]]:
         """
         Get matched pairs of image and label files.

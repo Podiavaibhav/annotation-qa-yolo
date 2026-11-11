@@ -1,0 +1,15 @@
+# Quick end-to-end check that everything runs. The numbers it produces mean nothing.
+# Use with:  python main.py --config configs/smoke.yaml run-all --data <data.yaml>
+output_dir: outputs_smoke
+model_name: yolov8n.pt
+device: auto
+epochs: 1
+img_size: 320
+batch_size: 8
+seed: 42
+train_seeds: [42]
+detector_mode: oof
+oof_folds: 2
+oof_epochs: 1
+confidence_threshold: 0.25
+cleaning_mode: model_assisted

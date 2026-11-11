@@ -1,176 +1,112 @@
-# Automated Annotation Quality Assurance & YOLO Retraining Pipeline
+# Annotation QA for YOLO datasets
 
-A modular, reproducible Python application that audits object-detection datasets, detects suspicious annotations, generates a cleaned dataset, and evaluates the impact of annotation quality on YOLOv8 model performance.
+Bad labels hurt object detectors, and checking thousands of images by hand doesn't scale. This project finds suspicious labels automatically, builds a cleaned copy of the dataset, and measures whether training on the cleaned copy gives a better model.
 
-## Project Overview
+To measure that fairly, the experiment corrupts a clean dataset on purpose and keeps a record of every change. That lets me ask two questions with real answers: how many of the planted errors did the detector find, and how much of the lost accuracy did cleaning win back.
 
-High-quality annotations are essential for robust computer vision models. Real-world datasets can contain labeling errors such as missing objects, incorrect classes, shifted bounding boxes, and duplicate annotations.
+## How it works
 
-This project provides a systematic, data-centric pipeline to identify, quantify, and mitigate suspicious annotations without requiring manual inspection of every image.
-
-## Problem Statement & Motivation
-
-- **Problem:** Noisy annotations can degrade model performance, while manually auditing thousands of images is time-consuming and difficult to scale.
-- **Motivation:** Automate annotation quality checks using geometric heuristics and model-assisted disagreement detection, then evaluate how dataset cleaning affects model performance.
-
-## Architecture
+1. **Analyze.** Rule-based checks on the labels: invalid coordinates, tiny or oversized boxes, odd aspect ratios, duplicate boxes, class counts.
+2. **Corrupt.** A noisy copy of the training labels is made by deleting boxes, flipping classes, shifting and resizing boxes, and adding duplicates. Every change is written to `corruption_manifest.json`. The validation set is never touched.
+3. **Detect.** The images are split into folds. For each fold, a YOLO model is trained on the other folds' (noisy) labels and used to predict only the held-out fold. So no image is predicted by a model that trained on it. A model that has seen an image tends to repeat its wrong labels instead of disagreeing with them. Where a confident prediction disagrees with a label, the detector records the line number and the box coordinates.
+4. **Score the detector.** The detector's flags are compared with the manifest: recall (how many planted errors were flagged) and precision (how many flags were real).
+5. **Clean.** The cleaner works on one box at a time. Exact duplicates are removed (the first copy stays). In `model_assisted` mode it also relabels boxes with a confidently different predicted class, moves boxes the model places elsewhere, and adds boxes the model sees but nobody labeled.
+6. **Train and compare.** YOLO is trained on the Original, Noisy and Cleaned data, three seeds each, and every model is evaluated on the same untouched validation set. The report gives mean ± standard deviation, and says so when a gain is smaller than the seed-to-seed variation.
 
 ```mermaid
 graph TD
-    A[YOLO Dataset] --> B[Quality Analyzer]
-    A --> C[Model-Assisted Detector]
-    B --> D[Analysis Reports]
-    C --> E[Audit Reports]
-    D --> F[Cleaning Engine]
-    E --> F
-    F --> G[Cleaned Dataset]
-    G --> H[Training and Evaluation]
-    A --> H
-    H --> I[Comparison Report]
+    A[Clean dataset] --> B[Analyzer]
+    A --> C[Noise injector + manifest]
+    C --> D[Noisy dataset]
+    D --> E[Out-of-fold models]
+    E --> F[Detector]
+    D --> B2[Analyzer on noisy data]
+    F --> G[Cleaner]
+    B2 --> G
+    G --> H[Cleaned dataset]
+    F --> S[Detector score vs manifest]
+    C --> S
+    A --> T[Train x 3 seeds]
+    D --> T
+    H --> T
+    T --> R[Report on the original val set]
 ```
 
-## Modules
+## Setup
 
-1. **Dataset Quality Analyzer:** Performs rule-based geometric and statistical checks, including invalid coordinates, tiny boxes, extreme aspect ratios, duplicate boxes, and class imbalance.
-
-2. **Model-Assisted Annotation Error Detection:** Uses pretrained YOLOv8 predictions and IoU-based greedy matching to identify potential missing annotations, class disagreements, and localization issues.
-
-3. **Dataset Cleaning Engine:** Generates a separate cleaned copy of the dataset. Supports conservative and aggressive cleaning modes while preserving the original data. Only training labels are modified.
-
-4. **Training, Evaluation & Reporting:** Supports a controlled three-way experiment comparing the original, synthetically corrupted, and cleaned datasets using consistent hyperparameters and an untouched validation set.
-
-## Technology Stack
-
-- Python 3.10+
-- Ultralytics YOLOv8
-- PyTorch
-- OpenCV and NumPy
-- Pandas
-- Matplotlib and Seaborn
-- PyYAML
-- Pytest
-
-## Installation
-
-Clone the repository:
+Python 3.10 or newer.
 
 ```bash
 git clone https://github.com/Podiavaibhav/annotation-qa-yolo.git
 cd annotation-qa-yolo
-```
-
-Create and activate a virtual environment.
-
-**macOS / Linux**
-
-```bash
 python3 -m venv venv
-source venv/bin/activate
-```
-
-**Windows**
-
-```powershell
-python -m venv venv
-venv\Scripts\activate
-```
-
-Install dependencies:
-
-```bash
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Dataset Preparation
+## Running it
 
-The pipeline expects a YOLO-format dataset with a configuration file such as `data.yaml`.
-
-Example structure:
-
-```text
-dataset/
-├── images/
-│   ├── train/
-│   └── val/
-├── labels/
-│   ├── train/
-│   └── val/
-└── data.yaml
-```
-
-Ensure that `data.yaml` contains the correct dataset paths, class count, and class names.
-
-## Usage
-
-Run the complete pipeline:
+Training needs a GPU to be practical. `notebooks/kaggle_experiment.ipynb` runs the whole thing on Kaggle (turn on the GPU and Internet in the notebook settings).
 
 ```bash
-python main.py run-all --data path/to/dataset/data.yaml
+# 1. Download a dataset (any Ultralytics dataset yaml works) and write a yaml for it
+python main.py prepare --dataset african-wildlife.yaml
+# prints: Dataset ready. Use:  --data <path>/data.yaml
+
+# 2. A quick check that everything runs (1 epoch, tiny images; the numbers mean nothing)
+python main.py --config configs/smoke.yaml run-all --data <path>/data.yaml
+
+# 3. The real run
+python main.py run-all --data <path>/data.yaml
+# interrupted? add --resume to reuse finished training runs
 ```
 
-Alternatively, run individual modules:
+`run-all` writes everything under `outputs/`. The files to look at:
 
-**Analyze dataset quality**
+| File | What it holds |
+|---|---|
+| `outputs/experiments/final_report.md` | mAP for Original / Noisy / Cleaned, mean ± std over seeds |
+| `outputs/experiments/detector_eval.md` | recall and precision of the detector against the planted errors |
+| `outputs/experiments/comparison.csv` | the same numbers as a table |
+| `outputs/cleaning/` | what the cleaner changed, line by line |
+| `outputs/model_audit/` | every flag the detector raised, with box coordinates |
 
-```bash
-python main.py analyze --data path/to/dataset/data.yaml
-```
+The individual steps can also be run on their own: `analyze`, `inject-noise`, `detect` (add `--oof` for out-of-fold models), `clean`, `score`, `train`.
 
-**Detect model-assisted annotation disagreements**
+## Cleaning modes
 
-```bash
-python main.py detect --data path/to/dataset/data.yaml --model yolov8n.pt
-```
+Set `cleaning_mode` in `configs/default.yaml`:
 
-**Clean the dataset**
+- `conservative`: removes invalid or malformed boxes and exact duplicates.
+- `model_assisted` (default): also relabels, moves and adds boxes using the detector's output.
+- `aggressive`: also deletes boxes the analyzer calls suspicious (tiny, extreme aspect ratio, huge). This can remove real small objects.
 
-```bash
-python main.py clean --data path/to/dataset/data.yaml
-```
+The confidence a prediction needs before it may change a label is set by `clean_relabel_confidence`, `clean_replace_confidence` and `clean_add_confidence`. Raising them makes the cleaner more careful.
 
-**Train and evaluate models**
+## Dataset layout
 
-```bash
-python main.py train --data path/to/dataset/data.yaml
-```
+The loader accepts `images/train` + `labels/train` and `train/images` + `train/labels`, and `val`, `valid` or `validation` for the validation split. A dataset yaml with a relative `path:` is fine; the pipeline writes its own copies with an absolute path before handing anything to Ultralytics.
 
-Replace the example dataset path with the path to your own dataset. These commands assume the corresponding CLI options are supported by the current implementation.
+## Results
 
-## Configuration
+<!-- Fill this in from your own run. Paste outputs/experiments/final_report.md and detector_eval.md here,
+     and name the dataset, the model, the number of epochs and the noise settings. -->
 
-Configuration is maintained in `configs/default.yaml`.
-
-Key parameters include:
-
-- `tiny_box_threshold`: Minimum normalized bounding-box area; default `0.001`.
-- `duplicate_iou_threshold`: IoU threshold used for duplicate-box detection; default `0.98`.
-- `cleaning_mode`: Selects conservative or aggressive cleaning.
-- `seed`: Random seed for reproducible noise injection; default `42`.
-
-Refer to the configuration file for the actual available parameters and defaults.
-
-## Experiment Methodology
-
-The evaluation workflow compares three dataset conditions:
-
-1. **Original:** Train on the original dataset.
-2. **Noisy:** Train on a synthetically corrupted copy with configurable annotation errors, such as deletion, class flipping, coordinate shifts, resizing, and duplication.
-3. **Cleaned:** Train on the noisy dataset after processing it through the cleaning engine.
-
-All three models are evaluated on the same untouched validation set to enable a fair comparison.
-
-The purpose is to measure whether the cleaning process improves downstream model performance rather than assuming that cleaning necessarily produces better results.
+Not run yet.
 
 ## Limitations
 
-- Model-assisted detection depends on the pretrained model's capabilities and biases.
-- Aggressive cleaning may remove legitimate annotations, including small or unusual objects.
-- Synthetic annotation noise does not perfectly represent real-world labeling errors.
-- Model disagreement is a signal for further inspection, not definitive proof that an annotation is incorrect.
+- The noise is synthetic. Real labelling mistakes are messier and tend to cluster on hard images.
+- The detector's helper models learn from the noisy labels themselves, so heavy noise weakens the detector too.
+- Precision is measured against the planted errors only. A flag on a mistake that was already in the original dataset counts as a false positive, so reported precision is a lower bound.
+- A model disagreeing with a label is evidence, not proof. Small or ambiguous objects get flagged more often.
+- `aggressive` mode can delete correct labels.
+- Detection only; segmentation labels are not supported.
 
-## Future Improvements
+## Tests
 
-- Integrate active learning to prioritize annotations for human review.
-- Add COCO JSON support with automatic YOLO conversion.
-- Develop an interactive dashboard for reviewing suspicious annotations.
+```bash
+pytest
+```
 
+The suite includes an end-to-end run of the full pipeline against a fake YOLO, so it needs no GPU or downloads. It checks that the pieces connect and that cleaning repairs labels in a controlled setting; it says nothing about real mAP, which needs a real run.

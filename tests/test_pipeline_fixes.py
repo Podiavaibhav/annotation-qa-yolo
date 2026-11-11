@@ -1,5 +1,5 @@
 """
-Regression tests for pipeline fixes (Issues 1-6).
+Regression tests for the cleaner, analyzer and noise injector.
 Uses small synthetic datasets. No GPU or full COCO required.
 """
 import pytest
@@ -70,7 +70,7 @@ def single_class_dataset(tmp_path):
 
 class TestPipelineFixes:
     def test_duplicate_detection_retains_class_ids(self, synthetic_dataset, tmp_path):
-        """Issue 5: Duplicate detection must distinguish same-class from different-class overlaps."""
+        """Duplicate detection must distinguish same-class from different-class overlaps."""
         config = {'output_dir': str(tmp_path / 'out'), 'duplicate_iou_threshold': 0.98}
         analyzer = AnnotationAnalyzer(str(synthetic_dataset), config)
         report = analyzer.analyze()
@@ -84,7 +84,7 @@ class TestPipelineFixes:
         assert any('other_class=0' in d for d in details)
 
     def test_malformed_labels_reported_with_line_numbers(self, synthetic_dataset, tmp_path):
-        """Issue 6: Malformed labels must be reported with consistent line numbers."""
+        """Malformed labels must be reported with consistent line numbers."""
         config = {'output_dir': str(tmp_path / 'out')}
         analyzer = AnnotationAnalyzer(str(synthetic_dataset), config)
         report = analyzer.analyze()
@@ -93,7 +93,7 @@ class TestPipelineFixes:
         assert any(item['issue'] == 'invalid_format' and item['line'] == 3 for item in invalid)
 
     def test_cleaner_preserves_all_splits_and_only_modifies_train(self, synthetic_dataset, tmp_path):
-        """Issue 2: Cleaner must preserve val/test splits untouched and only modify train."""
+        """The cleaner must copy val/test splits untouched and only modify train."""
         config = {'output_dir': str(tmp_path / 'out'), 'cleaning_mode': 'conservative'}
         
         # Create a fake analysis report to trigger cleaning
@@ -118,7 +118,7 @@ class TestPipelineFixes:
             assert len(lines) == 2  # Original had 3, 1 was malformed and removed
 
     def test_noise_injector_uses_seed_and_handles_single_class(self, single_class_dataset, tmp_path):
-        """Issue 3: Noise injector must use seeded random and handle single-class datasets safely."""
+        """The noise injector must be seeded and handle single-class datasets safely."""
         config = {
             'output_dir': str(tmp_path / 'out'),
             'seed': 42,
@@ -140,20 +140,25 @@ class TestPipelineFixes:
         assert label_file.exists()
         with open(label_file) as f:
             content = f.read().strip()
-            assert content == "0 0.500000 0.500000 0.300000 0.400000"
+            assert [float(v) for v in content.split()] == [0.0, 0.5, 0.5, 0.3, 0.4]
 
-    def test_cleaner_loads_model_audit_for_aggressive_mode(self, synthetic_dataset, tmp_path):
-        """Issue 4: Cleaner must properly load model audit CSV in aggressive mode."""
-        config = {'output_dir': str(tmp_path / 'out'), 'cleaning_mode': 'aggressive'}
-        
-        # Create fake model audit CSV
+    def test_cleaner_loads_model_audit_per_box(self, synthetic_dataset, tmp_path):
+        """The audit is applied to one specific box (image + line), never to a whole class."""
         audit_dir = tmp_path / 'model_audit'
         audit_dir.mkdir()
         with open(audit_dir / 'class_disagreements.csv', 'w') as f:
+            f.write("image,gt_line,gt_class,pred_class,confidence,iou\n")
+            f.write("t2.jpg,1,0,1,0.95,0.85\n")
+            f.write("t2.jpg,2,0,1,0.30,0.85\n")   # too unsure to act on
+        with open(audit_dir / 'class_disagreements_old_format.csv', 'w') as f:
             f.write("image,gt_class,pred_class,confidence,iou\n")
-            f.write("t2.txt,0,1,0.95,0.85\n")  # Flags class 0 in t2.txt for removal
-            
+
+        config = {'output_dir': str(tmp_path / 'out'), 'cleaning_mode': 'model_assisted'}
         cleaner = DatasetCleaner(str(synthetic_dataset), config, model_audit_path=str(audit_dir))
-        
-        # Verify it loaded the disagreement
-        assert ('t2.txt', 0) in cleaner.suspicious_to_remove
+        assert cleaner.relabel == {('t2.jpg', 1): 1}
+        assert not cleaner.suspicious_to_remove
+
+        # conservative mode must ignore the audit entirely
+        config['cleaning_mode'] = 'conservative'
+        cleaner = DatasetCleaner(str(synthetic_dataset), config, model_audit_path=str(audit_dir))
+        assert cleaner.relabel == {}

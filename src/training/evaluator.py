@@ -11,18 +11,17 @@ from ultralytics import YOLO
 logger = logging.getLogger(__name__)
 
 
-def evaluate_model(model_path: str, data_yaml: str, output_dir: str) -> Dict:
-    """
-    Evaluate a trained model and return metrics.
-    """
+def evaluate_model(model_path: str, data_yaml: str, output_dir: str,
+                   imgsz: int = 640, batch: int = 16) -> Dict:
+    """Evaluate a trained model on the validation split of `data_yaml` and return its metrics."""
     logger.info(f"Evaluating model {model_path}...")
     model = YOLO(model_path)
 
     metrics = model.val(
         data=data_yaml,
-        imgsz=640,
-        batch=16,
-        project=output_dir,
+        imgsz=imgsz,
+        batch=batch,
+        project=str(Path(output_dir).resolve()),
         name='evaluation',
         exist_ok=True,
         verbose=False,

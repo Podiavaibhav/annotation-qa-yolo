@@ -92,24 +92,24 @@ class AnnotationAnalyzer:
 
                 if not is_invalid:
                     if area < tiny_thresh:
-                        self.suspicious_annotations.append({'image': img_path.name, 'class_id': cid, 'box': [x, y, w, h], 'issue': 'tiny_box', 'severity': 'warning', 'details': f'area={area:.5f}'})
+                        self.suspicious_annotations.append({'image': img_path.name, 'class_id': cid, 'box': [x, y, w, h], 'line': ann['line_number'], 'issue': 'tiny_box', 'severity': 'warning', 'details': f'area={area:.5f}'})
                     aspect_ratio = w / h if h > 0 else 0
                     if aspect_ratio < min_ar or aspect_ratio > max_ar:
-                        self.suspicious_annotations.append({'image': img_path.name, 'class_id': cid, 'box': [x, y, w, h], 'issue': 'extreme_aspect_ratio', 'severity': 'warning', 'details': f'ar={aspect_ratio:.2f}'})
+                        self.suspicious_annotations.append({'image': img_path.name, 'class_id': cid, 'box': [x, y, w, h], 'line': ann['line_number'], 'issue': 'extreme_aspect_ratio', 'severity': 'warning', 'details': f'ar={aspect_ratio:.2f}'})
                     if area > max_area:
-                        self.suspicious_annotations.append({'image': img_path.name, 'class_id': cid, 'box': [x, y, w, h], 'issue': 'unusually_large', 'severity': 'warning', 'details': f'area={area:.3f}'})
-                    valid_boxes.append((idx, [x, y, w, h], cid))
+                        self.suspicious_annotations.append({'image': img_path.name, 'class_id': cid, 'box': [x, y, w, h], 'line': ann['line_number'], 'issue': 'unusually_large', 'severity': 'warning', 'details': f'area={area:.3f}'})
+                    valid_boxes.append((idx, [x, y, w, h], cid, ann['line_number']))
 
-            # C. Duplicates (Issue 5 fix: retain class IDs and distinguish)
+            # Duplicates: same class = exact_duplicate, different class = overlapping_different_class
             for i in range(len(valid_boxes)):
                 for j in range(i + 1, len(valid_boxes)):
-                    idx_i, box_i, cls_i = valid_boxes[i]
-                    idx_j, box_j, cls_j = valid_boxes[j]
+                    idx_i, box_i, cls_i, line_i = valid_boxes[i]
+                    idx_j, box_j, cls_j, line_j = valid_boxes[j]
                     iou = self._calculate_iou(box_i, box_j)
                     if iou >= dup_thresh:
                         issue_type = 'exact_duplicate' if cls_i == cls_j else 'overlapping_different_class'
                         self.suspicious_annotations.append({
-                            'image': img_path.name, 'class_id': cls_j, 'box': box_j, 
+                            'image': img_path.name, 'class_id': cls_j, 'box': box_j, 'line': line_j,
                             'issue': issue_type, 'severity': 'warning', 'details': f'IoU={iou:.3f}, other_class={cls_i}'
                         })
 
@@ -121,7 +121,10 @@ class AnnotationAnalyzer:
 
     def _generate_report(self, total_images: int) -> Dict:
         total_annotations = sum(self.class_counts.values())
-        valid_annotations = total_annotations - len(self.invalid_annotations)
+        # format errors never made it into class_counts, and one box can have several issues
+        bad_boxes = {(i['image'], i['line']) for i in self.invalid_annotations
+                     if i['issue'] not in ('invalid_format', 'non_numeric')}
+        valid_annotations = total_annotations - len(bad_boxes)
         counts = list(self.class_counts.values()) if self.class_counts else [0]
         return {
             'summary': {'total_images': total_images, 'total_annotations': total_annotations, 'valid_annotations': valid_annotations,
