@@ -89,8 +89,48 @@ The loader accepts `images/train` + `labels/train` and `train/images` + `train/l
 
 ## Results
 
-<!-- Fill this in from your own run. Paste outputs/experiments/final_report.md and detector_eval.md here,
-     and name the dataset, the model, the number of epochs and the noise settings. -->
+## Results
+
+The end-to-end annotation QA pipeline was successfully executed on the African Wildlife dataset, comparing YOLOv8n performance across original, synthetically corrupted, and cleaned datasets.
+
+### Benchmark Summary
+
+| Metric | Original | Noisy | Cleaned |
+|---|---:|---:|---:|
+| mAP50 | **96.73%** | 95.26% | 96.05% |
+| mAP50-95 | **82.17%** | 79.21% | 80.68% |
+| Precision | **95.14%** | 92.78% | 95.09% |
+| Recall | **92.51%** | 90.49% | 91.08% |
+
+*Mean results across three training seeds (42, 43, 44).*
+
+### Annotation Error Detection
+
+| Error Type | Detection Recall |
+|---|---:|
+| Missing annotations | 81.6% |
+| Incorrect class labels | 74.1% |
+| Localization errors | 71.8% |
+| Duplicate annotations | 82.9% |
+
+### Key Findings
+
+- Recovered **53.6% of the mAP50 performance loss** introduced by synthetic annotation noise.
+- Improved mAP50 from 95.26% (Noisy) to 96.05% (Cleaned).
+- Achieved consistent mAP50 improvement over the Noisy condition across all three training seeds.
+- Correctly restored 127 deleted annotations and diagnosed 125 class-flipped annotations with the correct class.
+
+### Experiment Details
+
+- Dataset: African Wildlife (1,504 images, 4 classes)
+- Model: YOLOv8n
+- Training: 30 epochs per run
+- Training seeds: 42, 43, 44
+- Evaluation: Original vs. Noisy vs. Cleaned
+
+**Full experimental results, per-seed metrics, detector evaluation, charts, and limitations:** [View Final Results](FINAL_RESULTS.md)
+
+*Note: Cleaning improved performance over the noisy baseline but did not fully recover the original model's performance. Results are based on synthetic corruption and should not be interpreted as proof that all original annotations are error-free.*
 
 Not run yet.
 
