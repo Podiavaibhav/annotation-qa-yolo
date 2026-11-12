@@ -89,8 +89,6 @@ The loader accepts `images/train` + `labels/train` and `train/images` + `train/l
 
 ## Results
 
-## Results
-
 The end-to-end annotation QA pipeline was successfully executed on the African Wildlife dataset, comparing YOLOv8n performance across original, synthetically corrupted, and cleaned datasets.
 
 ### Benchmark Summary
